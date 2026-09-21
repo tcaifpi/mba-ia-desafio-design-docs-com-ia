@@ -54,14 +54,10 @@ A solucao adiciona tres modelos ao schema Prisma:
 Todos os erros do modulo herdam de AppError e utilizam o prefixo WEBHOOK_:
 
 * **WEBHOOK_INVALID_URL (400):** URL invalida ou nao-HTTPS.
-* **WEBHOOK_PAYLOAD_TOO_LARGE (413):** Payload de disparo excede 500 KB.
-* **WEBHOOK_NOT_FOUND (404):** Webhook ou mensagem de DLQ inexistente.
-* **WEBHOOK_ROTATION_IN_PROGRESS (409):** Tentativa de rotacionar durante janela de grace period ativa.
-* **WEBHOOK_UNAUTHORIZED_ADMIN (403):** Usuario sem permissao ADMIN ao tentar replay de DLQ.
-
----
 ## 5. Integracao com Codigo Existente
-* **src/modules/orders/order.service.ts:** No metodo changeStatus, verificar se ha webhooks para o cliente e gravar na outbox dentro do prisma.$transaction.
-* **src/modules/webhooks/webhook.worker.ts:** Loop de polling a cada 2s lendo eventos PENDING com SKIP LOCKED e disparando HTTP com HMAC-SHA256 e X-Event-Id.
-* **src/modules/webhooks/webhook.service.ts:** Metodos de negocio (registerEndpoint, rotateSecret, listDeliveries, replayDeadLetter).
-* **src/infra/database/prisma.service.ts:** Reuso do client Prisma existente para gerenciar transacoes e consultas.
+A implementacao do subsistema se integra exclusivamente aos pontos ja consolidados na arquitetura do monolito:
+
+* **src/config/database.ts:** Reuso direto da instancia central exportada do Prisma Client (`prisma`). A persistencia na outbox (`webhook_events`) deve ser transacionada atomicamente junto com a mutacao de status do pedido utilizando `prisma.$transaction`.
+* **src/modules/orders/order.service.ts:** Ponto de captura do evento de negocio no metodo `changeStatus`. Ao efetivar a mudanca de estado de um pedido, verifica se existem webhooks ativos cadastrados para o cliente e insere o evento correspondente na tabela outbox dentro da transacao do banco.
+* **src/errors/app.error.ts:** Extensao direta da classe base `AppError` utilizada na API, registrando o catalogo com prefixo `WEBHOOK_*` para manter a padronizacao das respostas HTTP de erro sem criar camadas concorrentes.
+* **Pino Logger da Aplicacao:** Utilizacao do logger central ja instanciado no monolito para auditoria e rastreabilidade dos disparos e falhas de entrega.
